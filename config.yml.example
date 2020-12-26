@@ -1,0 +1,14 @@
+Address: ":8080"
+FahrplanUrl: "https://data.c3voc.de/rC3/channels.schedule.json"
+Fahrplanrefresh: "1m"
+AutoSchedule: yes
+UpcomingInterval: "20m"
+PlayoutServers:
+  Adam: "http://localhost:3000"
+  Clarke: "http://example.com"
+  "": "http://localhost:3000"
+IngestServer:
+  nginx:
+    - "https://some.rtmp.server/rtmp"
+  icecast:
+    - "http://you.icecast.server:8000/"
