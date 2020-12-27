@@ -14,8 +14,10 @@ var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
 func GetUpcoming(jobs map[int]PlayoutJob, when time.Duration) map[int]PlayoutJob {
 	upcoming := map[int]PlayoutJob{}
+	now := time.Now()
 	for _, job := range jobs {
-		if job.Start.After(time.Now()) && job.Start.Before(time.Now().Add(when)) {
+		if job.Start.After(now) && job.Start.Before(now.Add(when)) ||
+			now.After(job.Start) && now.Before(job.Start.Add(job.Duration)) {
 			upcoming[job.ID] = job
 		}
 	}
@@ -65,7 +67,7 @@ func ConvertScheduleToPLayoutJobs(schedule *Fahrplan, talkIDtoIngestURL map[int]
 					log.Printf("Cannot parse hour part of duration %s for %v: %s", talk.Duration, talk.ID, err)
 					continue
 				}
-				minute, err := time.ParseDuration(d[1] + "h")
+				minute, err := time.ParseDuration(d[1] + "m")
 				if err != nil {
 					log.Printf("Cannot parse minute part of duration %s for %v: %s", talk.Duration, talk.ID, err)
 					continue
