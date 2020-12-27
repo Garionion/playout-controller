@@ -12,9 +12,9 @@ import (
 
 var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
-func GetUpcoming(jobs map[int]PlayoutJob, when time.Duration) map[int]PlayoutJob{
+func GetUpcoming(jobs map[int]PlayoutJob, when time.Duration) map[int]PlayoutJob {
 	upcoming := map[int]PlayoutJob{}
-	for _, job := range jobs{
+	for _, job := range jobs {
 		if job.Start.After(time.Now()) && job.Start.Before(time.Now().Add(when)) {
 			upcoming[job.ID] = job
 		}
@@ -22,14 +22,14 @@ func GetUpcoming(jobs map[int]PlayoutJob, when time.Duration) map[int]PlayoutJob
 	return upcoming
 }
 
-func GetSchedule(schedule *Fahrplan, url string) error{
+func GetSchedule(schedule *Fahrplan, url string) error {
 	resp, err := http.Get(url) //nolint:gosec
-	defer resp.Body.Close()
 	if err != nil {
 		return err
 	}
+	defer resp.Body.Close()
 	if resp.StatusCode >= 300 || resp.StatusCode < 200 {
-		return fmt.Errorf("Got not OK: %s", resp.Status)
+		return fmt.Errorf("got not OK: %s", resp.Status)
 	}
 
 	body, readErr := ioutil.ReadAll(resp.Body)
@@ -44,13 +44,16 @@ func GetSchedule(schedule *Fahrplan, url string) error{
 	return nil
 }
 
-func ConvertScheduleToPLayoutJobs(schedule *Fahrplan) map[int]PlayoutJob {
+func ConvertScheduleToPLayoutJobs(schedule *Fahrplan, talkIDtoIngestURL map[int]string) map[int]PlayoutJob {
 	jobs := map[int]PlayoutJob{}
 	version := schedule.Schedule.Version
 
 	for _, day := range schedule.Schedule.Conference.Days {
 		for roomName, r := range day.Rooms {
 			for _, talk := range r {
+				if _, ok := talkIDtoIngestURL[talk.ID]; !ok {
+					continue
+				}
 				d := strings.Split(talk.Duration, ":")
 				// I assume that every talk has a hour and a minute part
 				if len(d) != 2 {
@@ -72,7 +75,7 @@ func ConvertScheduleToPLayoutJobs(schedule *Fahrplan) map[int]PlayoutJob {
 					ID:       talk.ID,
 					Start:    talk.Date,
 					Duration: duration,
-					Source:   "",
+					Source:   talkIDtoIngestURL[talk.ID],
 					Version:  version,
 					Room:     roomName,
 				}

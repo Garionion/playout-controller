@@ -5,12 +5,19 @@ import (
 )
 
 type PlayoutJob struct {
-	ID       int `json:"id"`
-	Start    time.Time `json:"start"`
+	ID       int           `json:"id"`
+	Start    time.Time     `json:"start"`
 	Duration time.Duration `json:"duration"`
-	Source   string `json:"source"`
-	Version  string `json:"version"`
-	Room     string `json:"room"`
+	Source   string        `json:"source"`
+	Version  string        `json:"version"`
+	Room     string        `json:"room"`
+}
+
+type ScheduledJob struct {
+	ID      int    `json:"id"`
+	Port    string `json:"port"`
+	Room    string `json:"room"`
+	Version string `json:"version"`
 }
 
 type Fahrplan struct {
@@ -18,14 +25,14 @@ type Fahrplan struct {
 }
 
 type Persons struct {
-	ID         int    `json:"id"`
-	PublicName string `json:"public_name"`
+	ID         interface{} `json:"id"`
+	PublicName string      `json:"public_name"`
 }
 type Talk struct {
 	URL              string        `json:"url"`
-	ID               int          `json:"id"`
+	ID               int           `json:"id"`
 	GUID             string        `json:"guid"`
-	Logo             string		   `json:"logo"`
+	Logo             string        `json:"logo"`
 	Date             time.Time     `json:"date"`
 	Start            string        `json:"start"`
 	Duration         string        `json:"duration"`
@@ -56,11 +63,11 @@ type Attachments struct {
 	Title string `json:"title"`
 }
 type Days struct {
-	Index    int       			`json:"index"`
-	Date     string    			`json:"date"`
-	DayStart time.Time 			`json:"day_start"`
-	DayEnd   time.Time 			`json:"day_end"`
-	Rooms    map[string]Room	`json:"rooms"`
+	Index    int             `json:"index"`
+	Date     string          `json:"date"`
+	DayStart time.Time       `json:"day_start"`
+	DayEnd   time.Time       `json:"day_end"`
+	Rooms    map[string]Room `json:"rooms"`
 }
 type Conference struct {
 	Acronym          string `json:"acronym"`
