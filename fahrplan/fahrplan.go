@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 )
@@ -44,6 +45,40 @@ func GetSchedule(schedule *Fahrplan, url string) error {
 		return jsonErr
 	}
 	return nil
+}
+
+func setNextRoomTalkID(jobs map[int]PlayoutJob) map[int]PlayoutJob {
+	intermediate := make(map[string]map[time.Time]int)
+	roomStartArray := make(map[string][]time.Time)
+	sorted := make(map[string][]int)
+	for id, job := range jobs {
+		if intermediate[job.Room] == nil {
+			intermediate[job.Room] = make(map[time.Time]int)
+		}
+		if roomStartArray[job.Room] == nil {
+			roomStartArray[job.Room] = []time.Time{}
+		}
+		intermediate[job.Room][job.Start] = id
+		roomStartArray[job.Room] = append(roomStartArray[job.Room], job.Start)
+	}
+	for roomName, room := range roomStartArray {
+		sort.Slice(room, func(i, j int) bool {
+			return room[i].Before(room[j])
+		})
+		for _, t := range room {
+			sorted[roomName] = append(sorted[roomName], intermediate[roomName][t])
+		}
+		for index, jobID := range sorted[roomName] {
+			if index == len(sorted[roomName])-1 {
+				continue
+			}
+			job := jobs[jobID]
+			nextTalk := sorted[roomName][index+1]
+			job.Next = jobs[nextTalk].Start
+			jobs[jobID] = job
+		}
+	}
+	return jobs
 }
 
 func ConvertScheduleToPLayoutJobs(schedule *Fahrplan, talkIDtoIngestURL map[int]string) map[int]PlayoutJob {
@@ -85,5 +120,5 @@ func ConvertScheduleToPLayoutJobs(schedule *Fahrplan, talkIDtoIngestURL map[int]
 			}
 		}
 	}
-	return jobs
+	return setNextRoomTalkID(jobs)
 }

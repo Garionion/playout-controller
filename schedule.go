@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"path"
 	"playout-controller/fahrplan"
-	"playout-controller/store"
 	"time"
 )
 
@@ -24,7 +23,9 @@ type Job struct {
 	Version string    `json:"version"`
 }
 
-func schedule(jobs map[int]fahrplan.PlayoutJob, servers map[string]string, scheduledJobs map[int]fahrplan.ScheduledJob) map[int]fahrplan.ScheduledJob {
+//nolint:funlen
+func schedule(jobs map[int]fahrplan.PlayoutJob, cfg *Configuration, scheduledJobs map[int]fahrplan.ScheduledJob) map[int]fahrplan.ScheduledJob {
+	servers := cfg.PlayoutServers
 	defaultRoom, defRoomExist := servers[""]
 	for _, job := range jobs {
 		roomURL, ok := servers[job.Room]
@@ -37,9 +38,15 @@ func schedule(jobs map[int]fahrplan.PlayoutJob, servers map[string]string, sched
 				continue
 			}
 		}
+		var postPadding time.Duration
+		if !job.Next.IsZero() && cfg.MaxPostPadding > job.Next.Sub(job.Start.Add(job.Duration)) {
+			postPadding = job.Next.Sub(job.Start.Add(job.Duration))
+		} else {
+			postPadding = cfg.MaxPostPadding
+		}
 		reqBody, err := json.Marshal(Job{
-			StartAt: job.Start,
-			StopAt:  job.Start.Add(job.Duration),
+			StartAt: job.Start.Add(-cfg.PrePadding),
+			StopAt:  job.Start.Add(job.Duration).Add(postPadding),
 			Source:  job.Source,
 			ID:      job.ID,
 			Version: job.Version,
@@ -51,7 +58,8 @@ func schedule(jobs map[int]fahrplan.PlayoutJob, servers map[string]string, sched
 
 		u, _ := url.Parse(roomURL)
 		u.Path = path.Join(u.Path, "schedulePlayout")
-		resp, err := http.Post(u.String(), "application/json", bytes.NewBuffer(reqBody)) //nolint:gosec
+		c := http.Client{Timeout: 5 * time.Second}
+		resp, err := c.Post(u.String(), "application/json", bytes.NewBuffer(reqBody)) //nolint:gosec
 		if err != nil {
 			log.Printf("schedule Request for %v failed: %v\n", job.ID, err)
 			continue
@@ -74,6 +82,7 @@ func schedule(jobs map[int]fahrplan.PlayoutJob, servers map[string]string, sched
 			log.Printf("Can't Unmarshall JSON for %v: %v", job.ID, jsonErr)
 			continue
 		}
+		log.Printf("Scheduled %v", job.ID)
 		scheduledJob.Room = job.Room
 		scheduledJobs[job.ID] = scheduledJob
 	}
@@ -90,33 +99,23 @@ func removeAlreadyScheduledJobs(jobs map[int]fahrplan.PlayoutJob, scheduled map[
 	return jobs
 }
 
-func scheduler(cfg *Configuration, store *store.Store, upcomingChannel *bcast.Member, scheduledChannel *bcast.Member) chan struct{} {
-	ticker := time.NewTicker(minOfDuration(cfg.UpcomingInterval/2, cfg.Fahrplanrefresh))
+func scheduler(cfg *Configuration, upcomingChannel *bcast.Member, scheduledChannel *bcast.Member) chan struct{} {
 	quit := make(chan struct{})
-
-	go func(cfg *Configuration) {
+	go func(cfg *Configuration, upcomingChannel *bcast.Member, scheduledChannel *bcast.Member) {
 		scheduled := make(map[int]fahrplan.ScheduledJob)
-		upcoming := upcomingChannel.Recv().(map[int]fahrplan.PlayoutJob)
-		if cfg.AutoSchedule {
-			scheduled = schedule(removeAlreadyScheduledJobs(upcoming, scheduled), cfg.PlayoutServers, scheduled)
-			scheduledChannel.Send(scheduled)
-		}
-		for {
-			select {
-			case <-ticker.C:
-				if !cfg.AutoSchedule {
-					continue
-				}
-				store.RLock()
-				upcoming := store.Upcoming
-				store.RUnlock()
-				scheduled = schedule(removeAlreadyScheduledJobs(upcoming, scheduled), cfg.PlayoutServers, scheduled)
+		for upcoming := range upcomingChannel.Read {
+			u := upcoming.(map[int]fahrplan.PlayoutJob)
+			if !cfg.AutoSchedule {
+				continue
+			}
+			toSchedule := removeAlreadyScheduledJobs(u, scheduled)
+			if len(toSchedule) == 0 {
+				log.Println("Nothing new to Schedule")
+			} else {
+				scheduled = schedule(toSchedule, cfg, scheduled)
 				scheduledChannel.Send(scheduled)
-			case <-quit:
-				ticker.Stop()
-				return
 			}
 		}
-	}(cfg)
+	}(cfg, upcomingChannel, scheduledChannel)
 	return quit
 }

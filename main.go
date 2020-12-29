@@ -18,6 +18,8 @@ type Configuration struct {
 	Fahrplanrefresh     time.Duration     `yaml:"Fahrplanrefresh" env:"FAHRPLAN_REFRESH"`
 	AutoSchedule        bool              `yaml:"AutoSchedule" env:"AUTOSCHEDULE"`
 	UpcomingInterval    time.Duration     `yaml:"UpcomingInterval" env:"UPCOMINGINTERVAL"`
+	PrePadding          time.Duration     `yaml:"PrePadding"`
+	MaxPostPadding      time.Duration     `yaml:"MaxPostPadding"`
 	IngestServer        IngestServer      `yaml:"IngestServer"`
 	PlayoutServers      map[string]string `yaml:"PlayoutServers"`
 	StudioIngestURLFile string            `yaml:"StudioIngestURLFile"`
@@ -35,6 +37,8 @@ func getJobs(fahrplanURL string, version string, talkIDtoIngestURL map[int]strin
 	}
 	if schedule.Schedule.Version == version {
 		log.Printf("Fahrplan version %s is still up to date\n", version)
+	} else {
+		log.Printf("NEW Fahrplan version %s", schedule.Schedule.Version)
 	}
 	jobs := fahrplan.ConvertScheduleToPLayoutJobs(schedule, talkIDtoIngestURL)
 	return schedule.Schedule.Version, jobs
@@ -61,21 +65,22 @@ func refreshFahrplan(interval time.Duration, fahrplanURL string, talkIDtoIngestU
 }
 
 func getUpcoming(cfg *Configuration, store *store.Store, jobChannel *bcast.Member, upcomingChannel *bcast.Member) chan struct{} {
-	interval := minOfDuration(cfg.UpcomingInterval, cfg.Fahrplanrefresh)
+	interval := minOfDuration(cfg.UpcomingInterval/4, cfg.Fahrplanrefresh)
 
-	ticker := time.NewTicker(interval / 4)
+	ticker := time.NewTicker(interval)
 	quit := make(chan struct{})
 	go func() {
 		jobs := jobChannel.Recv().(map[int]fahrplan.PlayoutJob)
-		fahrplan.GetUpcoming(jobs, cfg.UpcomingInterval)
-
+		upcoming := fahrplan.GetUpcoming(jobs, cfg.UpcomingInterval)
+		upcomingChannel.Send(upcoming)
 		for {
 			select {
 			case <-ticker.C:
 				store.RLock()
 				jobs := store.PlayoutJobs
 				store.RUnlock()
-				upcomingChannel.Send(fahrplan.GetUpcoming(jobs, interval))
+				upcoming := fahrplan.GetUpcoming(jobs, cfg.UpcomingInterval)
+				upcomingChannel.Send(upcoming)
 			case <-quit:
 				ticker.Stop()
 				return
@@ -112,7 +117,7 @@ func main() {
 	refreshFahrplan(cfg.Fahrplanrefresh, cfg.FahrplanURL, talkToIngestURL, jobChannel.Join())
 
 	getUpcoming(cfg, s, jobChannel.Join(), upcomingChannel.Join())
-	scheduler(cfg, s, upcomingChannel.Join(), scheduledChannel.Join())
+	scheduler(cfg, upcomingChannel.Join(), scheduledChannel.Join())
 
 	log.Printf("%v\n", cfg)
 
@@ -124,18 +129,21 @@ func main() {
 	api := app.Group("/api")
 	api.Get("/all", func(c *fiber.Ctx) error {
 		s.RLock()
-		defer s.RUnlock()
-		return c.JSON(s.PlayoutJobs)
+		p := s.PlayoutJobs
+		s.RUnlock()
+		return c.JSON(p)
 	})
 	api.Get("/upcoming", func(c *fiber.Ctx) error {
 		s.RLock()
-		defer s.RUnlock()
-		return c.JSON(s.Upcoming)
+		u := s.Upcoming
+		s.RUnlock()
+		return c.JSON(u)
 	})
 	api.Get("/scheduled", func(c *fiber.Ctx) error {
 		s.RLock()
-		defer s.RUnlock()
-		return c.JSON(s.Scheduled)
+		scheduled := s.Scheduled
+		s.RUnlock()
+		return c.JSON(scheduled)
 	})
 	api.Post("/schedulePlayout", func(ctx *fiber.Ctx) error {
 		job := new(fahrplan.PlayoutJob)
@@ -150,12 +158,12 @@ func main() {
 		s.RLock()
 		scheduled := s.Scheduled
 		s.RUnlock()
-		newScheduled := schedule(pjobs, cfg.PlayoutServers, scheduled)
+		newScheduled := schedule(pjobs, cfg, scheduled)
 		s.SetScheduledJobs(newScheduled)
 		ctx.JSON(newScheduled)
 		return nil
 	})
-	ln, err := net.Listen("tcp", ":8080")
+	ln, err := net.Listen("tcp", ":8080") //nolint:gosec
 	if err != nil {
 		log.Fatal(err)
 	}

@@ -11,6 +11,7 @@ type PlayoutJob struct {
 	Source   string        `json:"source"`
 	Version  string        `json:"version"`
 	Room     string        `json:"room"`
+	Next     time.Time     `json:"next"`
 }
 
 type ScheduledJob struct {
