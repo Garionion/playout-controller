@@ -1,14 +1,14 @@
 package main
 
 import (
+	"github.com/Garionion/playout-controller/fahrplan"
+	"github.com/Garionion/playout-controller/store"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/grafov/bcast"
 	"github.com/ilyakaznacheev/cleanenv"
 	"log"
 	"net"
-	"playout-controller/fahrplan"
-	"playout-controller/store"
 	"time"
 )
 
@@ -44,8 +44,8 @@ func getJobs(fahrplanURL string, version string, talkIDtoIngestURL map[int]strin
 	return schedule.Schedule.Version, jobs
 }
 
-func refreshFahrplan(interval time.Duration, fahrplanURL string, talkIDtoIngestURL map[int]string, jobChannel *bcast.Member) {
-	ticker := time.NewTicker(interval)
+func refreshFahrplan(cfg *Configuration, talkIDtoIngestURL map[int]string, jobChannel *bcast.Member) {
+	ticker := time.NewTicker(cfg.Fahrplanrefresh)
 	quit := make(chan struct{})
 
 	go func(fahrplanURL string) {
@@ -61,7 +61,7 @@ func refreshFahrplan(interval time.Duration, fahrplanURL string, talkIDtoIngestU
 				return
 			}
 		}
-	}(fahrplanURL)
+	}(cfg.FahrplanURL)
 }
 
 func getUpcoming(cfg *Configuration, store *store.Store, jobChannel *bcast.Member, upcomingChannel *bcast.Member) chan struct{} {
@@ -105,19 +105,18 @@ func main() {
 	go upcomingChannel.Broadcast(0)
 	scheduledChannel := bcast.NewGroup()
 	go scheduledChannel.Broadcast(0)
-
-	s, _ := store.NewStore(jobChannel.Join(), upcomingChannel.Join(), scheduledChannel.Join())
-
 	err := cleanenv.ReadConfig("config.yml", cfg)
 	if err != nil {
 		log.Fatal("Failed to load Config: ", err)
 	}
 
+	s, _ := store.NewStore(jobChannel.Join(), upcomingChannel.Join(), scheduledChannel.Join(), cfg.PlayoutServers)
+
 	talkToIngestURL := getTalkIngestURL(cfg.TalkIDtoStudioFile, cfg.StudioIngestURLFile)
-	refreshFahrplan(cfg.Fahrplanrefresh, cfg.FahrplanURL, talkToIngestURL, jobChannel.Join())
+	refreshFahrplan(cfg, talkToIngestURL, jobChannel.Join())
 
 	getUpcoming(cfg, s, jobChannel.Join(), upcomingChannel.Join())
-	scheduler(cfg, upcomingChannel.Join(), scheduledChannel.Join())
+	scheduler(cfg, s, upcomingChannel.Join(), scheduledChannel.Join())
 
 	log.Printf("%v\n", cfg)
 
@@ -158,7 +157,7 @@ func main() {
 		s.RLock()
 		scheduled := s.Scheduled
 		s.RUnlock()
-		newScheduled := schedule(pjobs, cfg, scheduled)
+		newScheduled := schedule(cfg, s, pjobs, scheduled, false)
 		s.SetScheduledJobs(newScheduled)
 		ctx.JSON(newScheduled)
 		return nil

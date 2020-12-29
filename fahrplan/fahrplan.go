@@ -47,7 +47,7 @@ func GetSchedule(schedule *Fahrplan, url string) error {
 	return nil
 }
 
-func setNextRoomTalkID(jobs map[int]PlayoutJob) map[int]PlayoutJob {
+func setNextRoomTalkStart(jobs map[int]PlayoutJob) map[int]PlayoutJob {
 	intermediate := make(map[string]map[time.Time]int)
 	roomStartArray := make(map[string][]time.Time)
 	sorted := make(map[string][]int)
@@ -120,5 +120,5 @@ func ConvertScheduleToPLayoutJobs(schedule *Fahrplan, talkIDtoIngestURL map[int]
 			}
 		}
 	}
-	return setNextRoomTalkID(jobs)
+	return setNextRoomTalkStart(jobs)
 }

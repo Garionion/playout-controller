@@ -14,13 +14,6 @@ type PlayoutJob struct {
 	Next     time.Time     `json:"next"`
 }
 
-type ScheduledJob struct {
-	ID      int    `json:"id"`
-	Port    string `json:"port"`
-	Room    string `json:"room"`
-	Version string `json:"version"`
-}
-
 type Fahrplan struct {
 	Schedule Schedule `json:"schedule"`
 }
